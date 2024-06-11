@@ -1,38 +1,78 @@
+import json
+import aiohttp
 import requests
-from requests import get 
+from pyrogram import Client, filters
+from pyrogram.types import InputMediaPhoto, Message
 from DAXXMUSIC import app
-from pyrogram import filters
-from pyrogram.types import InputMediaPhoto
 
-@app.on_message(filters.command(["image"], prefixes=["/", "!", "%", ",", "", ".", "@", "#"]))
-async def pinterest(_, message):
-     chat_id = message.chat.id
+UNSPLASH_API_KEY = 'UwPT7-Of5XQgwxHx-GfcXa4sK0O_38Pbi-6FrQ5f7AY'
 
-     try:
-       query= message.text.split(None,1)[1]
-     except:
-         return await message.reply("**ɢɪᴠᴇ ɪᴍᴀɢᴇ ɴᴀᴍᴇ ғᴏʀ sᴇᴀʀᴄʜ 🔍**")
+async def fetch(url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"HTTP request failed with status code {response.status} for URL: {url}")
+            return await response.text()
 
-     images = get(f"https://pinterest-api-one.vercel.app/?q={query}").json()
+@app.on_message(filters.command("img","image"))
+async def bingimg_search(client: Client, message: Message):
+    try:
+        text = message.text.split(None, 1)[1]
+    except IndexError:
+        return await message.reply_text("Provide me a query to search!")
 
-     media_group = []
-     count = 0
+    search_message = await message.reply_text("🌿")
 
-     msg = await message.reply(f"sᴄʀᴀᴘɪɴɢ ɪᴍᴀɢᴇs ғʀᴏᴍ ᴘɪɴᴛᴇʀᴇᴛs...")
-     for url in images["images"][:6]:
-                  
-          media_group.append(InputMediaPhoto(media=url))
-          count += 1
-          await msg.edit(f"=> ᴏᴡᴏ sᴄʀᴀᴘᴇᴅ ɪᴍᴀɢᴇs {count}")
+    bingimg_url = "https://sugoi-api.vercel.app/bingimg?keyword=" + text
+    try:
+        resp_text = await fetch(bingimg_url)
+        images = json.loads(resp_text)
+    except Exception as e:
+        await message.reply_text(f"Error fetching images: {str(e)}")
+        await search_message.delete()
+        return
 
-     try:
-        
+    media = [InputMediaPhoto(media=img) for img in images[:7]]
+
+    await message.reply_media_group(media=media)
+    await search_message.delete()
+    await message.delete()
+
+@app.on_message(filters.command(["image"], prefixes=["/", "!"]))
+async def pinterest(_, message: Message):
+    chat_id = message.chat.id
+
+    try:
+        query = message.text.split(None, 1)[1]
+    except IndexError:
+        return await message.reply("ɢɪᴠᴇ ɪᴍᴀɢᴇ ɴᴀᴍᴇ ғᴏʀ sᴇᴀʀᴄʜ 🔍")
+
+    response = requests.get(f"https://api.unsplash.com/search/photos?query={query}&client_id={UNSPLASH_API_KEY}")
+
+    if response.status_code != 200:
+        return await message.reply(f"Error: Received status code {response.status_code} from API")
+
+    try:
+        images = response.json()
+    except ValueError as e:
+        return await message.reply(f"Error decoding JSON: {e}\nResponse content: {response.content}")
+
+    media_group = []
+    count = 0
+
+    msg = await message.reply("Annie sᴄʀᴀᴘɪɴɢ ɪᴍᴀɢᴇs...")
+    for result in images.get("results", [])[:6]:
+        media_group.append(InputMediaPhoto(media=result["urls"]["regular"]))
+        count += 1
+        await msg.edit(f"=> Annie ᴏᴡᴏ sᴄʀᴀᴘᴇᴅ ɪᴍᴀɢᴇs {count}")
+
+    try:
         await app.send_media_group(
-                chat_id=chat_id, 
-                media=media_group,
-                reply_to_message_id=message.id)
+            chat_id=chat_id,
+            media=media_group,
+            reply_to_message_id=message.id
+        )
         return await msg.delete()
-
-     except Exception as e:
-           await msg.delete()
-           return await message.reply(f"ᴇʀʀᴏʀ : {e}")
+    except Exception as e:
+        await msg.delete()
+        return await message.reply(f"ᴇʀʀᴏʀ : {e}")
